@@ -131,6 +131,12 @@ using GFLAGS_NAMESPACE::SetVersionString;
 namespace ROCKSDB_NAMESPACE {
 // Forward Declaration
 class Benchmark;
+
+//from our online data
+std::vector<std::pair<std::string,std::string>> key_value_pairs_;
+Random * rndForGenerateKeyandValue;
+int indexForKeyValuePairs = 0;
+
 }  // namespace ROCKSDB_NAMESPACE
 
 namespace {
@@ -342,6 +348,10 @@ DEFINE_string(
     "can be specified through --restore_rate_limit\n");
 
 DEFINE_int64(num, 1000000, "Number of key/values to place in database");
+DEFINE_int64(num2, 1000000, "Number of key/values to place in database");
+DEFINE_int64(num3, 1000000, "Number of key/values to place in database");
+DEFINE_int64(num4, 1000000, "Number of key/values to place in database");
+DEFINE_int64(num5, 1000000, "Number of key/values to place in database");
 
 DEFINE_int64(numdistinct, 1000,
              "Number of distinct keys to use. Used in RandomWithVerify to "
@@ -2160,13 +2170,18 @@ class RandomGenerator {
     pos_ = 0;
   }
 
+  // Slice Generate(unsigned int len) {
+  //   assert(len <= data_.size());
+  //   if (pos_ + len > data_.size()) {
+  //     pos_ = 0;
+  //   }
+  //   pos_ += len;
+  //   return Slice(data_.data() + pos_ - len, len);
+  // }
+
   Slice Generate(unsigned int len) {
-    assert(len <= data_.size());
-    if (pos_ + len > data_.size()) {
-      pos_ = 0;
-    }
-    pos_ += len;
-    return Slice(data_.data() + pos_ - len, len);
+    assert(key_value_pairs_.size() > 0);
+    return Slice(key_value_pairs_[indexForKeyValuePairs].second);
   }
 
   Slice Generate() {
@@ -3556,6 +3571,22 @@ class Benchmark {
     if (user_timestamp_size_ > 0) {
       mock_app_clock_.reset(new TimestampEmulator());
     }
+
+    // Initialize the random number generator
+    rndForGenerateKeyandValue = new Random(301);
+    //read the key value pairs from the internal_keys.txt and values.txt
+    //open file
+    std::ifstream key_file("internal_keys.txt");
+    std::ifstream value_file("values.txt");
+    std::string key;
+    std::string value;
+    if (key_file.is_open() && value_file.is_open()) {
+      while (std::getline(key_file, key) && std::getline(value_file, value)) {
+        key_value_pairs_.push_back(std::make_pair(key, value));
+      }
+      key_file.close();
+      value_file.close();
+    }
   }
 
   void DeleteDBs() {
@@ -3651,6 +3682,14 @@ class Benchmark {
     pos += bytes_to_fill;
     if (size > pos - start) {
       memset(pos, '0', size - (pos - start));
+    }
+    
+    // generate key from key_value_pairs_
+    if (key_value_pairs_.size() > 0) {
+      indexForKeyValuePairs = rndForGenerateKeyandValue->Uniform(key_value_pairs_.size());
+      std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;
+      std::string value_str = key_value_pairs_[indexForKeyValuePairs].second;
+      *key = Slice(key_str);
     }
   }
 
@@ -3752,11 +3791,20 @@ class Benchmark {
     std::stringstream benchmark_stream(FLAGS_benchmarks);
     std::string name;
     std::unique_ptr<ExpiredTimeFilter> filter;
+    
+    uint32_t num_cmd = 0;
+    int64_t array_num[10] = {0,FLAGS_num,FLAGS_num2, FLAGS_num3, FLAGS_num4, FLAGS_num5};
     while (std::getline(benchmark_stream, name, ',')) {
       if (open_options_.write_buffer_manager) {
         fprintf(stderr, "\nBEFORE Benchmark (%s): %lu OF %lu\n\n", name.c_str(),
                 open_options_.write_buffer_manager->memory_usage(),
                 open_options_.write_buffer_manager->buffer_size());
+      }
+
+      
+      num_cmd++;
+      if(num_cmd > 1){
+        FLAGS_num = array_num[num_cmd];
       }
 
       // Sanitize parameters
@@ -9926,6 +9974,8 @@ int db_bench_tool(int argc, char** argv) {
   }
 
   benchmark.reset();
+  fprintf(stdout,"TEST COMPILE:\n\n");
+  fprintf(stdout, "STATISTICS:\n%s\n", dbstats->ToString().c_str());
   return result;
 }
 
