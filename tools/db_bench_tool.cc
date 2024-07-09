@@ -114,6 +114,7 @@
 #include "utilities/merge_operators/bytesxor.h"
 #include "utilities/merge_operators/sortlist.h"
 #include "utilities/persistent_cache/block_cache_tier.h"
+#include "rocksdb/sst_file_reader.h"
 
 #ifdef MEMKIND
 #include "memory/memkind_kmem_allocator.h"
@@ -134,6 +135,8 @@ class Benchmark;
 
 //from our online data
 std::vector<std::pair<std::string,std::string>> key_value_pairs_;
+std::set<std::string> key_set_tofind_;
+std::vector<std::string> KeysRead;
 Random * rndForGenerateKeyandValue;
 int indexForKeyValuePairs = 0;
 
@@ -3572,21 +3575,83 @@ class Benchmark {
       mock_app_clock_.reset(new TimestampEmulator());
     }
 
+    //load keys to find in files
+
+    std::ifstream key_file("/nvme/nvme0/BulkPostingKeys.txt");
+    uint64_t key_index = 0 ;
+    while(key_file){
+      uint16_t keysize;
+        key_file.read(reinterpret_cast<char*>(&keysize), 2);
+        std::streamsize sizeBytesRead = key_file.gcount();
+        if (sizeBytesRead != 2)
+        {
+            std::cout << "sizeBytesRead: " << sizeBytesRead << std::endl;
+            break;
+        }
+        std::vector<char> key(keysize);
+        key_file.read(key.data(), keysize);
+
+        std::string storageKeys(key.data(), keysize);
+        KeysRead.push_back(storageKeys);
+    }
+
+    std::cout << "load keys success" << "load :  " << KeysRead.size() << std::endl;
+    
+
     // Initialize the random number generator
     rndForGenerateKeyandValue = new Random(301);
-    //read the key value pairs from the internal_keys.txt and values.txt
-    //open file
-    std::ifstream key_file("internal_keys.txt");
-    std::ifstream value_file("values.txt");
-    std::string key;
-    std::string value;
-    if (key_file.is_open() && value_file.is_open()) {
-      while (std::getline(key_file, key) && std::getline(value_file, value)) {
-        key_value_pairs_.push_back(std::make_pair(key, value));
-      }
-      key_file.close();
-      value_file.close();
+    // //read the key value pairs from the internal_keys.txt and values.txt
+    // //open file
+    // std::ifstream key_file("/nvme/nvme0/internal_keys.txt");
+    // std::ifstream value_file("/nvme/nvme0/values.txt");
+    // std::string key;
+    // std::string value;
+    // if (key_file.is_open() && value_file.is_open()) {
+    //   while (std::getline(key_file, key) && std::getline(value_file, value)) {
+    //     key_value_pairs_.push_back(std::make_pair(key, value));
+    //   }
+    //   key_file.close();
+    //   value_file.close();
+    // }
+    // std::cout << " load data success" << "load :  " << key_value_pairs_.size() << std::endl;
+
+    // read Rocksdb key value pairs from existed sst files
+    // open file
+    std::cout << "read data from sst file" << std::endl;
+    DB * db_to_read;
+    Options options;
+    options.create_if_missing = true;
+    Status s = DB::Open(options, "/nvme/nvme0/ProdData", &db_to_read);
+    if (!s.ok()) {
+      std::cout << "open db failed" << std::endl;
     }
+    
+    // as sst file is more than one , so we need to read all the sst files
+    std::vector<std::string> files_sst = {"000263.sst","000264.sst","000265.sst","000266.sst","000267.sst","000268.sst","000269.sst","000270.sst","000271.sst","000272.sst","000273.sst","000274.sst","000275.sst","000276.Ssst","000277.sst","000278.sst","000279.sst","000280.sst"};
+    // see how many repeated key in the sst files
+    std::set<std::string> key_set;
+
+    SstFileReader sst_reader(options);
+    int len = 0;
+    
+    for (std::string file : files_sst) {
+      sst_reader.Open("/nvme/nvme0/ProdData/" + file);
+      Iterator* iter = sst_reader.NewIterator(ReadOptions());
+      for(iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+        key_value_pairs_.push_back(std::make_pair(iter->key().ToString(), iter->value().ToString()));
+        key_set.insert(iter->key().ToString());
+        int lenkey = iter->key().ToString().size();
+        len = std::max(len, lenkey);
+      }
+      delete iter;
+    }
+    std::cout << " load data success" << "load :  " << key_value_pairs_.size() << std::endl;
+    std::cout << " load data success" << "diffrent key load :  " << key_set.size() << std::endl;
+    std::cout << " load data success" << "max key size :  " << len << std::endl;
+    delete db_to_read;
+
+    key_size_ = 512;
+  
   }
 
   void DeleteDBs() {
@@ -3640,57 +3705,59 @@ class Benchmark {
   //     ----------------------------
   void GenerateKeyFromInt(uint64_t v, int64_t num_keys, Slice* key,
                           int size = 0) {
-    if (size == 0) {
-      size = key_size_;
-    }
+    // if (size == 0) {
+    //   size = key_size_;
+    // }
 
-    if (!keys_.empty()) {
-      assert(FLAGS_use_existing_keys);
-      assert(keys_.size() == static_cast<size_t>(num_keys));
-      assert(v < static_cast<uint64_t>(num_keys));
-      *key = keys_[v];
-      return;
-    }
-    char* start = const_cast<char*>(key->data());
-    char* pos = start;
-    if (keys_per_prefix_ > 0) {
-      int64_t num_prefix = num_keys / keys_per_prefix_;
-      int64_t prefix = v % num_prefix;
-      int bytes_to_fill = std::min(prefix_size_, 8);
-      if (port::kLittleEndian) {
-        for (int i = 0; i < bytes_to_fill; ++i) {
-          pos[i] = (prefix >> ((bytes_to_fill - i - 1) << 3)) & 0xFF;
-        }
-      } else {
-        memcpy(pos, static_cast<void*>(&prefix), bytes_to_fill);
-      }
-      if (prefix_size_ > 8) {
-        // fill the rest with 0s
-        memset(pos + 8, '0', prefix_size_ - 8);
-      }
-      pos += prefix_size_;
-    }
+    // if (!keys_.empty()) {
+    //   assert(FLAGS_use_existing_keys);
+    //   assert(keys_.size() == static_cast<size_t>(num_keys));
+    //   assert(v < static_cast<uint64_t>(num_keys));
+    //   *key = keys_[v];
+    //   return;
+    // }
+    // char* start = const_cast<char*>(key->data());
+    // char* pos = start;
+    // if (keys_per_prefix_ > 0) {
+    //   int64_t num_prefix = num_keys / keys_per_prefix_;
+    //   int64_t prefix = v % num_prefix;
+    //   int bytes_to_fill = std::min(prefix_size_, 8);
+    //   if (port::kLittleEndian) {
+    //     for (int i = 0; i < bytes_to_fill; ++i) {
+    //       pos[i] = (prefix >> ((bytes_to_fill - i - 1) << 3)) & 0xFF;
+    //     }
+    //   } else {
+    //     memcpy(pos, static_cast<void*>(&prefix), bytes_to_fill);
+    //   }
+    //   if (prefix_size_ > 8) {
+    //     // fill the rest with 0s
+    //     memset(pos + 8, '0', prefix_size_ - 8);
+    //   }
+    //   pos += prefix_size_;
+    // }
 
-    int bytes_to_fill = std::min(size - static_cast<int>(pos - start), 8);
-    if (port::kLittleEndian) {
-      for (int i = 0; i < bytes_to_fill; ++i) {
-        pos[i] = (v >> ((bytes_to_fill - i - 1) << 3)) & 0xFF;
-      }
-    } else {
-      memcpy(pos, static_cast<void*>(&v), bytes_to_fill);
-    }
-    pos += bytes_to_fill;
-    if (size > pos - start) {
-      memset(pos, '0', size - (pos - start));
-    }
+    // int bytes_to_fill = std::min(size - static_cast<int>(pos - start), 8);
+    // if (port::kLittleEndian) {
+    //   for (int i = 0; i < bytes_to_fill; ++i) {
+    //     pos[i] = (v >> ((bytes_to_fill - i - 1) << 3)) & 0xFF;
+    //   }
+    // } else {
+    //   memcpy(pos, static_cast<void*>(&v), bytes_to_fill);
+    // }
+    // pos += bytes_to_fill;
+    // if (size > pos - start) {
+    //   memset(pos, '0', size - (pos - start));
+    // }
     
     // generate key from key_value_pairs_
-    if (key_value_pairs_.size() > 0) {
-      indexForKeyValuePairs = rndForGenerateKeyandValue->Uniform(key_value_pairs_.size());
+    
+      //indexForKeyValuePairs = rndForGenerateKeyandValue->Uniform(key_value_pairs_.size());
       std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;
       std::string value_str = key_value_pairs_[indexForKeyValuePairs].second;
+      //indexForKeyValuePairs = (indexForKeyValuePairs + 1) % key_value_pairs_.size();
+      key_set_tofind_.insert(key_str);
       *key = Slice(key_str);
-    }
+    
   }
 
   void GenerateKeyFromIntForSeek(uint64_t v, int64_t num_keys, Slice* key) {
@@ -4119,7 +4186,8 @@ class Benchmark {
                                       "rocksdb.cur-size-all-mem-tables",
                                       "rocksdb.size-all-mem-tables",
                                       "rocksdb.num-entries-active-mem-table",
-                                      "rocksdb.num-entries-imm-mem-tables"};
+                                      "rocksdb.num-entries-imm-mem-tables",
+                                      "rocksdb.estimate-table-readers-mem"};
         PrintStats(keys);
       } else if (name == "sstables") {
         PrintStats("rocksdb.sstables");
@@ -5895,6 +5963,13 @@ class Benchmark {
             s = blobdb->Put(write_options_, key, val);
           }
         } else if (FLAGS_num_column_families <= 1) {
+          std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;
+          std::string value_str = key_value_pairs_[indexForKeyValuePairs].second;
+          indexForKeyValuePairs = (indexForKeyValuePairs + 1) % key_value_pairs_.size();
+          
+          key = Slice(key_str);
+          val = Slice(value_str);
+          
           batch.Put(key, val);
         } else {
           // We use same rand_num as seed for key and column family so that we
@@ -9976,6 +10051,7 @@ int db_bench_tool(int argc, char** argv) {
   benchmark.reset();
   fprintf(stdout,"TEST COMPILE:\n\n");
   fprintf(stdout, "STATISTICS:\n%s\n", dbstats->ToString().c_str());
+  std::cout<<"diffrent keys insert into:"<<key_set_tofind_.size()<<std::endl;
   return result;
 }
 
