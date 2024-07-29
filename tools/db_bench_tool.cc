@@ -139,13 +139,14 @@ std::set<std::string> key_set_tofind_;
 std::vector<std::string> KeysRead;
 Random * rndForGenerateKeyandValue;
 int indexForKeyValuePairs = 0;
-
+uint64_t num_insert_record = 0;
 }  // namespace ROCKSDB_NAMESPACE
 
 namespace {
 // The benchmark needs to be created before running the first group, retained
 // between groups, and destroyed after running the last group
 std::unique_ptr<ROCKSDB_NAMESPACE::Benchmark> benchmark;
+
 // // The shared options needs to be created before running the first group,
 // retained
 // // between groups, and destroyed after running the last group
@@ -3577,7 +3578,7 @@ class Benchmark {
 
     //load keys to find in files
 
-    std::ifstream key_file("/nvme/nvme0/BulkPostingKeys.txt");
+    std::ifstream key_file("/nvme/nvme1/zzy/data/BulkPostingKeys.txt");
     uint64_t key_index = 0 ;
     while(key_file){
       uint16_t keysize;
@@ -3621,9 +3622,9 @@ class Benchmark {
     DB * db_to_read;
     Options options;
     options.create_if_missing = true;
-    Status s = DB::Open(options, "/nvme/nvme0/ProdData", &db_to_read);
+    Status s = DB::Open(options, "/nvme/nvme1/zzy/data/ProdData", &db_to_read);
     if (!s.ok()) {
-      std::cout << "open db failed" << std::endl;
+      std::cout<< "open db failed" << std::endl;
     }
     
     // as sst file is more than one , so we need to read all the sst files
@@ -3635,7 +3636,7 @@ class Benchmark {
     int len = 0;
     
     for (std::string file : files_sst) {
-      sst_reader.Open("/nvme/nvme0/ProdData/" + file);
+      sst_reader.Open("/nvme/nvme1/zzy/data/ProdData/" + file);
       Iterator* iter = sst_reader.NewIterator(ReadOptions());
       for(iter->SeekToFirst(); iter->Valid(); iter->Next()) {
         key_value_pairs_.push_back(std::make_pair(iter->key().ToString(), iter->value().ToString()));
@@ -5963,8 +5964,14 @@ class Benchmark {
             s = blobdb->Put(write_options_, key, val);
           }
         } else if (FLAGS_num_column_families <= 1) {
+          num_insert_record++;
+
+          //generate a random num
+          //indexForKeyValuePairs = rand() % key_value_pairs_.size();
+          
           std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;
           std::string value_str = key_value_pairs_[indexForKeyValuePairs].second;
+          
           indexForKeyValuePairs = (indexForKeyValuePairs + 1) % key_value_pairs_.size();
           
           key = Slice(key_str);
@@ -6674,6 +6681,13 @@ class Benchmark {
       }
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(key_rand);
       GenerateKeyFromInt(key_rand, FLAGS_num, &key);
+      num_insert_record++;
+
+      //generate a random num
+      indexForKeyValuePairs = rand() % key_value_pairs_.size();    
+      std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;         
+      key = Slice(key_str);
+
       read++;
       std::string ts_ret;
       std::string* ts_ptr = nullptr;
@@ -10052,6 +10066,7 @@ int db_bench_tool(int argc, char** argv) {
   fprintf(stdout,"TEST COMPILE:\n\n");
   fprintf(stdout, "STATISTICS:\n%s\n", dbstats->ToString().c_str());
   std::cout<<"diffrent keys insert into:"<<key_set_tofind_.size()<<std::endl;
+  std::cout<<"insert using our data"<<num_insert_record<<std::endl;
   return result;
 }
 

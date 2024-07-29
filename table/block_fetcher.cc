@@ -153,10 +153,14 @@ inline void BlockFetcher::PrepareBufferForBlockFromFile() {
   } else if (maybe_compressed_ && !do_uncompress_) {
     compressed_buf_ =
         AllocateBlock(block_size_with_trailer_, memory_allocator_compressed_);
+        ROCKS_LOG_INFO(ioptions_.logger, "zstest AllocateBlock %lu as compressed_buf_ PrepareBufferForBlockFromFile. ",
+                       block_size_with_trailer_);
     used_buf_ = compressed_buf_.get();
   } else {
     heap_buf_ = AllocateBlock(block_size_with_trailer_, memory_allocator_);
     used_buf_ = heap_buf_.get();
+        ROCKS_LOG_INFO(ioptions_.logger, "zstest AllocateBlock %lu PrepareBufferForBlockFromFile. ",
+                       block_size_with_trailer_);
   }
 }
 
@@ -182,6 +186,8 @@ inline void BlockFetcher::InsertUncompressedBlockToPersistentCacheIfNeeded() {
 inline void BlockFetcher::CopyBufferToHeapBuf() {
   assert(used_buf_ != heap_buf_.get());
   heap_buf_ = AllocateBlock(block_size_with_trailer_, memory_allocator_);
+    ROCKS_LOG_INFO(ioptions_.logger, "zstest AllocateBlock %lu CopyBufferToHeapBuf. ",
+                       block_size_with_trailer_);
   memcpy(heap_buf_.get(), used_buf_, block_size_with_trailer_);
 #ifndef NDEBUG
   num_heap_buf_memcpy_++;
@@ -192,6 +198,8 @@ inline void BlockFetcher::CopyBufferToCompressedBuf() {
   assert(used_buf_ != compressed_buf_.get());
   compressed_buf_ =
       AllocateBlock(block_size_with_trailer_, memory_allocator_compressed_);
+              ROCKS_LOG_INFO(ioptions_.logger, "zstest AllocateBlock %lu CopyBufferToCompressedBuf. ",
+                       block_size_with_trailer_);
   memcpy(compressed_buf_.get(), used_buf_, block_size_with_trailer_);
 #ifndef NDEBUG
   num_compressed_buf_memcpy_++;

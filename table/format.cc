@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <string>
 
+#include "logging/logging.h"
 #include "block_fetcher.h"
 #include "file/random_access_file_reader.h"
 #include "memory/memory_allocator_impl.h"
@@ -665,7 +666,6 @@ Status UncompressBlockData(const UncompressionInfo& uncompression_info,
     }
     return ret;
   }
-
   *out_contents = BlockContents(std::move(ubuf), uncompressed_size);
 
   if (ShouldReportDetailedTime(ioptions.env, ioptions.stats)) {
@@ -694,8 +694,11 @@ Status UncompressSerializedBlock(const UncompressionInfo& uncompression_info,
                                  MemoryAllocator* allocator) {
   assert(data[size] != kNoCompression);
   assert(data[size] == static_cast<char>(uncompression_info.type()));
-  return UncompressBlockData(uncompression_info, data, size, out_contents,
+  Status s = UncompressBlockData(uncompression_info, data, size, out_contents,
                              format_version, ioptions, allocator);
+   ROCKS_LOG_INFO(ioptions.logger, "zstest AllocateBlock %lu UncompressSerializedBlock. usable_size %lu, raw data size %lu ",
+                       (out_contents->data).size(), out_contents->usable_size(), size);
+   return s;
 }
 
 // Replace the contents of db_host_id with the actual hostname, if db_host_id

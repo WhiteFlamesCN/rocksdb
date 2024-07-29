@@ -1363,6 +1363,8 @@ WithBlocklikeCheck<Status, TBlocklike> BlockBasedTable::PutDataBlockToCache(
                             block_contents.data.size(),
                             &uncompressed_block_contents, format_version,
                             ioptions, memory_allocator);
+   ROCKS_LOG_INFO(ioptions.logger, "zstest AllocateBlock %lu PutDataBlockToCache. usable_size %lu, raw data size %lu ",
+                       uncompressed_block_contents.data.size(), uncompressed_block_contents.usable_size(), block_contents.data.size());
     if (!s.ok()) {
       return s;
     }
