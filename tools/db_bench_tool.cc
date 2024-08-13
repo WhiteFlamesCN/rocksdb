@@ -135,10 +135,63 @@ class Benchmark;
 
 //from our online data
 std::vector<std::pair<std::string,std::string>> key_value_pairs_;
+std::vector<std::string> decoded_key;
 std::set<std::string> key_set_tofind_;
 std::vector<std::string> KeysRead;
 Random * rndForGenerateKeyandValue;
-int indexForKeyValuePairs = 0;
+int indexForKeyValuePairs = 9000;
+uint64_t num_insert_record = 0;
+
+// Base64 解码函数
+static const std::string base64_chars = 
+             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+             "abcdefghijklmnopqrstuvwxyz"
+             "0123456789+/";
+
+static inline bool is_base64(unsigned char c) {
+    return (isalnum(c) || (c == '+') || (c == '/'));
+}
+
+std::string base64_decode(const std::string& input) {
+    int in_len = input.size();
+    int i = 0;
+    int j = 0;
+    int in_ = 0;
+    unsigned char char_array_4[4], char_array_3[3];
+    std::string ret;
+
+    while (in_len-- && (input[in_] != '=') && is_base64(input[in_])) {
+        char_array_4[i++] = input[in_]; in_++;
+        if (i == 4) {
+            for (i = 0; i < 4; i++)
+                char_array_4[i] = base64_chars.find(char_array_4[i]);
+
+            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+            char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+
+            for (i = 0; (i < 3); i++)
+                ret += char_array_3[i];
+            i = 0;
+        }
+    }
+
+    if (i) {
+        for (j = i; j < 4; j++)
+            char_array_4[j] = 0;
+
+        for (j = 0; j < 4; j++)
+            char_array_4[j] = base64_chars.find(char_array_4[j]);
+
+        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+        char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+
+        for (j = 0; (j < i - 1); j++) ret += char_array_3[j];
+    }
+
+    return ret;
+}
 
 }  // namespace ROCKSDB_NAMESPACE
 
@@ -146,6 +199,7 @@ namespace {
 // The benchmark needs to be created before running the first group, retained
 // between groups, and destroyed after running the last group
 std::unique_ptr<ROCKSDB_NAMESPACE::Benchmark> benchmark;
+
 // // The shared options needs to be created before running the first group,
 // retained
 // // between groups, and destroyed after running the last group
@@ -2023,7 +2077,7 @@ DEFINE_uint64(total_ram_size, 512 * 1024 * 1024ul,
 namespace ROCKSDB_NAMESPACE {
 namespace {
 bool is_default(const char* flag_name) {
-  return gflags::GetCommandLineFlagInfoOrDie(flag_name).is_default;
+  return google::GetCommandLineFlagInfoOrDie(flag_name).is_default;
 }
 static Status CreateMemTableRepFactory(
     std::shared_ptr<MemTableRepFactory>* factory) {
@@ -3575,29 +3629,42 @@ class Benchmark {
       mock_app_clock_.reset(new TimestampEmulator());
     }
 
-    //load keys to find in files
+    // //load keys to find in files
 
-    std::ifstream key_file("/nvme/nvme0/BulkPostingKeys.txt");
-    uint64_t key_index = 0 ;
-    while(key_file){
-      uint16_t keysize;
-        key_file.read(reinterpret_cast<char*>(&keysize), 2);
-        std::streamsize sizeBytesRead = key_file.gcount();
-        if (sizeBytesRead != 2)
-        {
-            std::cout << "sizeBytesRead: " << sizeBytesRead << std::endl;
-            break;
-        }
-        std::vector<char> key(keysize);
-        key_file.read(key.data(), keysize);
+    // std::ifstream key_file("/nvme/nvme0/BulkPostingKeys.txt");
+    // uint64_t key_index = 0 ;
+    // while(key_file){
+    //   uint16_t keysize;
+    //     key_file.read(reinterpret_cast<char*>(&keysize), 2);
+    //     std::streamsize sizeBytesRead = key_file.gcount();
+    //     if (sizeBytesRead != 2)
+    //     {
+    //         std::cout << "sizeBytesRead: " << sizeBytesRead << std::endl;
+    //         break;
+    //     }
+    //     std::vector<char> key(keysize);
+    //     key_file.read(key.data(), keysize);
 
-        std::string storageKeys(key.data(), keysize);
-        KeysRead.push_back(storageKeys);
-    }
+    //     std::string storageKeys(key.data(), keysize);
+    //     KeysRead.push_back(storageKeys);
+    // }
 
-    std::cout << "load keys success" << "load :  " << KeysRead.size() << std::endl;
+    // std::cout << "load keys success" << "load :  " << KeysRead.size() << std::endl;
     
-
+    // load real workloads
+    std::ifstream file_decode("/nvme/nvme0/decoded_output.log");
+    
+    if (file_decode.is_open()) {
+        std::string line;
+        while (std::getline(file_decode, line)) {
+            decoded_key.push_back(base64_decode(line));
+        }
+        file_decode.close();
+    } else {
+        std::cerr << "Unable to open file" << std::endl;
+    }
+    // print size of decoded data
+    std::cout << "load decoded data success" << "load :  " << decoded_key.size() << std::endl;
     // Initialize the random number generator
     rndForGenerateKeyandValue = new Random(301);
     // //read the key value pairs from the internal_keys.txt and values.txt
@@ -3621,13 +3688,15 @@ class Benchmark {
     DB * db_to_read;
     Options options;
     options.create_if_missing = true;
-    Status s = DB::Open(options, "/nvme/nvme0/ProdData", &db_to_read);
+    //Status s = DB::Open(options, "/nvme/nvme0/ProdData", &db_to_read);
+    Status s = DB::Open(options, "/nvme/nvme0/15952", &db_to_read);
     if (!s.ok()) {
-      std::cout << "open db failed" << std::endl;
+      std::cout<< "open db failed" << std::endl;
     }
     
     // as sst file is more than one , so we need to read all the sst files
-    std::vector<std::string> files_sst = {"000263.sst","000264.sst","000265.sst","000266.sst","000267.sst","000268.sst","000269.sst","000270.sst","000271.sst","000272.sst","000273.sst","000274.sst","000275.sst","000276.Ssst","000277.sst","000278.sst","000279.sst","000280.sst"};
+    //std::vector<std::string> files_sst = {"000263.sst","000264.sst","000265.sst","000266.sst","000267.sst","000268.sst","000269.sst","000270.sst","000271.sst","000272.sst","000273.sst","000274.sst","000275.sst","000276.Ssst","000277.sst","000278.sst","000279.sst","000280.sst"};
+    std::vector<std::string> files_sst = {"000269.sst","000270.sst","000271.sst","000272.sst","000273.sst","000274.sst","000275.sst","000276.sst","000277.sst","000278.sst","000279.sst","000280.sst","000281.sst","000282.sst","000283.sst","000284.sst","000285.sst","000286.sst"};
     // see how many repeated key in the sst files
     std::set<std::string> key_set;
 
@@ -3635,9 +3704,14 @@ class Benchmark {
     int len = 0;
     
     for (std::string file : files_sst) {
-      sst_reader.Open("/nvme/nvme0/ProdData/" + file);
+      //sst_reader.Open("/nvme/nvme0/ProdData/" + file);
+      sst_reader.Open("/nvme/nvme0/15952/" + file);
       Iterator* iter = sst_reader.NewIterator(ReadOptions());
       for(iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+        // // if value length > 1000 , we ignore it
+        // if (iter->value().ToString().size() > 50) {
+        //   continue;
+        // }
         key_value_pairs_.push_back(std::make_pair(iter->key().ToString(), iter->value().ToString()));
         key_set.insert(iter->key().ToString());
         int lenkey = iter->key().ToString().size();
@@ -3914,11 +3988,11 @@ class Benchmark {
 
       int num_repeat = 1;
       int num_warmup = 0;
-      if (!gflags::GetCommandLineFlagInfoOrDie("ttl").is_default &&
+      if (!google::GetCommandLineFlagInfoOrDie("ttl").is_default &&
           FLAGS_ttl < 1) {
         ErrorExit("ttl must be positive value");
       }
-      if (gflags::GetCommandLineFlagInfoOrDie("ttl").is_default &&
+      if (google::GetCommandLineFlagInfoOrDie("ttl").is_default &&
           FLAGS_skip_expired_data) {
         ErrorExit("ttl must be set to use skip_expired_data");
       }
@@ -5963,8 +6037,14 @@ class Benchmark {
             s = blobdb->Put(write_options_, key, val);
           }
         } else if (FLAGS_num_column_families <= 1) {
+          num_insert_record++;
+
+          //generate a random num
+          //indexForKeyValuePairs = rand() % key_value_pairs_.size();
+          
           std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;
           std::string value_str = key_value_pairs_[indexForKeyValuePairs].second;
+          
           indexForKeyValuePairs = (indexForKeyValuePairs + 1) % key_value_pairs_.size();
           
           key = Slice(key_str);
@@ -6674,6 +6754,16 @@ class Benchmark {
       }
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(key_rand);
       GenerateKeyFromInt(key_rand, FLAGS_num, &key);
+      num_insert_record++;
+
+      //generate a random num
+      // indexForKeyValuePairs = rand() % key_value_pairs_.size();    
+      // std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;         
+      std::string key_str = decoded_key[indexForKeyValuePairs];
+      indexForKeyValuePairs = (indexForKeyValuePairs + 1) % decoded_key.size();
+      //std::cout<<"size of decoded_key: "<<key_str.size()<<std::endl;
+      key = Slice(key_str);
+
       read++;
       std::string ts_ret;
       std::string* ts_ptr = nullptr;
@@ -6758,6 +6848,7 @@ class Benchmark {
     int64_t bytes = 0;
     int64_t num_multireads = 0;
     int64_t found = 0;
+    int indexForKeyValuePairs_readrandom = 0;
     ReadOptions options = read_options_;
     std::vector<Slice> keys;
     std::vector<std::unique_ptr<const char[]>> key_guards;
@@ -6793,6 +6884,30 @@ class Benchmark {
           GenerateKeyFromInt(GetRandomKey(&thread->rand), FLAGS_num, &keys[i]);
         }
       }
+
+      //use our key to replace random key
+      std::mutex mtx;
+      std::string key_str;
+      for (int64_t i = 0; i < entries_per_batch_; ++i) {
+        //num_insert_record++;
+        {  
+        std::lock_guard<std::mutex> lock(mtx);
+        key_str = decoded_key[indexForKeyValuePairs_readrandom];
+        indexForKeyValuePairs_readrandom = (indexForKeyValuePairs_readrandom + 1) % decoded_key.size();
+        keys[i] = Slice(key_str);
+        }
+      }
+      
+      
+      // num_insert_record++;
+      // //generate a random num
+      // // indexForKeyValuePairs = rand() % key_value_pairs_.size();    
+      // // std::string key_str = key_value_pairs_[indexForKeyValuePairs].first;         
+      // std::string key_str = decoded_key[indexForKeyValuePairs];
+      // indexForKeyValuePairs = (indexForKeyValuePairs + 1) % decoded_key.size();
+      // //std::cout<<"size of decoded_key: "<<key_str.size()<<std::endl;
+      // keys[0] = Slice(key_str);     
+
       Slice ts;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
@@ -10052,6 +10167,7 @@ int db_bench_tool(int argc, char** argv) {
   fprintf(stdout,"TEST COMPILE:\n\n");
   fprintf(stdout, "STATISTICS:\n%s\n", dbstats->ToString().c_str());
   std::cout<<"diffrent keys insert into:"<<key_set_tofind_.size()<<std::endl;
+  std::cout<<"insert using our data"<<num_insert_record<<std::endl;
   return result;
 }
 

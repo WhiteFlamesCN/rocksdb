@@ -34,6 +34,8 @@
 
 cmake_minimum_required(VERSION 3.10)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2")
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules/")
 include(ReadVersion)
 include(GoogleTest)
@@ -414,7 +416,8 @@ if(USE_RTTI STREQUAL "AUTO")
   if(MSVC)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GR-")
   else()
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-rtti")
+    #set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-rtti")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
   endif()
 elseif(USE_RTTI)
   message(STATUS "Enabling RTTI in all builds")
