@@ -6848,7 +6848,7 @@ class Benchmark {
     int64_t bytes = 0;
     int64_t num_multireads = 0;
     int64_t found = 0;
-    int indexForKeyValuePairs_readrandom = 0;
+    int64_t indexForKeyValuePairs_readrandom = 0;
     ReadOptions options = read_options_;
     std::vector<Slice> keys;
     std::vector<std::unique_ptr<const char[]>> key_guards;
@@ -6884,18 +6884,17 @@ class Benchmark {
           GenerateKeyFromInt(GetRandomKey(&thread->rand), FLAGS_num, &keys[i]);
         }
       }
+      //remove all elem in keys
+      keys.clear();
+
 
       //use our key to replace random key
-      std::mutex mtx;
+      //std::mutex mtx;
       std::string key_str;
       for (int64_t i = 0; i < entries_per_batch_; ++i) {
-        //num_insert_record++;
-        {  
-        std::lock_guard<std::mutex> lock(mtx);
         key_str = decoded_key[indexForKeyValuePairs_readrandom];
         indexForKeyValuePairs_readrandom = (indexForKeyValuePairs_readrandom + 1) % decoded_key.size();
-        keys[i] = Slice(key_str);
-        }
+        keys.emplace_back(Slice(key_str));
       }
       
       
