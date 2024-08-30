@@ -10167,6 +10167,7 @@ int db_bench_tool(int argc, char** argv) {
   fprintf(stdout, "STATISTICS:\n%s\n", dbstats->ToString().c_str());
   std::cout<<"diffrent keys insert into:"<<key_set_tofind_.size()<<std::endl;
   std::cout<<"insert using our data"<<num_insert_record<<std::endl;
+  std::cout<<"test"<<std::endl;
   return result;
 }
 
